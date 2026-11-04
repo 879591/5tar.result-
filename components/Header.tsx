@@ -19,30 +19,76 @@ export default function Header() {
   const [loadingUser, setLoadingUser] = useState(true);
 
   useEffect(() => {
-    const supabase = createClient();
-    
-    // Check current session
-    supabase.auth.getUser().then(({ data }: any) => {
-      setUser(data?.user || null);
-      setLoadingUser(false);
-    }).catch(() => {
-      setLoadingUser(false);
-    });
+    // Open login modal if redirected with login=required
+    if (typeof window !== "undefined") {
+      const params = new URLSearchParams(window.location.search);
+      if (params.get("login") === "required") {
+        setAuthModalOpen(true);
+      }
+    }
 
-    // Listen to auth changes
+    const checkAuth = async () => {
+      // 1. Check local session API (/api/auth/me)
+      try {
+        const res = await fetch("/api/auth/me");
+        const data = await res.json();
+        if (data?.authenticated && data.user) {
+          setUser(data.user);
+          setLoadingUser(false);
+          return;
+        }
+      } catch (e) {
+        // Continue to Supabase check
+      }
+
+      // 2. Check localStorage fallback
+      const stored = localStorage.getItem("5tar_user");
+      if (stored) {
+        try {
+          setUser(JSON.parse(stored));
+          setLoadingUser(false);
+          return;
+        } catch {}
+      }
+
+      // 3. Check Supabase session
+      const supabase = createClient();
+      supabase.auth.getUser().then(({ data }: any) => {
+        setUser(data?.user || null);
+        setLoadingUser(false);
+      }).catch(() => {
+        setLoadingUser(false);
+      });
+    };
+
+    checkAuth();
+
+    // Listen to custom auth events
+    const handleAuthEvent = () => checkAuth();
+    window.addEventListener("auth-changed", handleAuthEvent);
+
+    const supabase = createClient();
     const { data: authListener } = supabase.auth.onAuthStateChange((_event: any, session: any) => {
-      setUser(session?.user || null);
+      if (session?.user) {
+        setUser(session.user);
+      }
     });
 
     return () => {
+      window.removeEventListener("auth-changed", handleAuthEvent);
       authListener?.subscription?.unsubscribe();
     };
   }, []);
 
   const handleLogout = async () => {
+    try {
+      await fetch("/api/auth/logout", { method: "POST" });
+    } catch {}
+    localStorage.removeItem("5tar_user");
     const supabase = createClient();
-    await supabase.auth.signOut();
+    await supabase.auth.signOut().catch(() => {});
     setUser(null);
+    window.location.reload();
   };
 
   const navLinks = [

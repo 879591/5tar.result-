@@ -11,9 +11,13 @@ interface StoredOtpRecord {
   windowStart: number;
 }
 
-// Global in-memory map backed by crypto hash storage
-// Persists across requests within the active server runtime
-const globalOtpStore = new Map<string, StoredOtpRecord>();
+// Global in-memory map backed by crypto hash storage attached to globalThis
+// Persists across separate Next.js route chunks in the active server process
+const globalAny = globalThis as unknown as { __5tarOtpStore?: Map<string, StoredOtpRecord> };
+if (!globalAny.__5tarOtpStore) {
+  globalAny.__5tarOtpStore = new Map<string, StoredOtpRecord>();
+}
+const globalOtpStore = globalAny.__5tarOtpStore;
 
 const COOLDOWN_SECONDS = 60;
 const EXPIRY_SECONDS = 300; // 5 minutes
@@ -148,7 +152,8 @@ export function verifyStoredOtp(phone10: string, submittedOtp: string): { succes
     };
   }
 
-  // 4. Verification successful -> Immediately invalidate OTP to prevent replay attacks
-  globalOtpStore.delete(phone10);
+  // 4. Verification successful -> Invalidate OTP code to prevent replay attacks, while preserving lastSentAt for cooldown
+  record.otpHash = "";
+  record.expiresAt = 0;
   return { success: true };
 }
