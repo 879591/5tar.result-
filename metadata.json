@@ -1,6 +1,6 @@
 {
-  "name": "",
-  "description": "",
+  "name": "5tarResult",
+  "description": "5tarResult educational portal for Sarkari Results, Exams, Admissions, Jobs, Mock Tests, and Study Material.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

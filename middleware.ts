@@ -6,53 +6,63 @@ const PROTECTED_PREFIXES = ["/dashboard", "/profile", "/admin"];
 export async function middleware(request: NextRequest) {
   let response = NextResponse.next({ request });
 
-  const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    {
-      cookies: {
-        getAll() {
-          return request.cookies.getAll();
-        },
-        setAll(cookiesToSet) {
-          cookiesToSet.forEach(({ name, value }) =>
-            request.cookies.set(name, value)
-          );
-          response = NextResponse.next({ request });
-          cookiesToSet.forEach(({ name, value, options }) =>
-            response.cookies.set(name, value, options)
-          );
-        },
-      },
-    }
-  );
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
-  const isProtected = PROTECTED_PREFIXES.some((p) =>
-    request.nextUrl.pathname.startsWith(p)
-  );
-
-  if (isProtected && !user) {
-    const redirectUrl = new URL("/", request.url);
-    redirectUrl.searchParams.set("login", "required");
-    return NextResponse.redirect(redirectUrl);
+  if (!supabaseUrl || !supabaseKey) {
+    // Supabase not yet configured via env vars - pass through gracefully
+    return response;
   }
 
-  // /admin gets a second check once profiles.role exists in the DB (Phase 4).
-  // Placeholder for now — do not treat "logged in" as "is admin".
-  if (request.nextUrl.pathname.startsWith("/admin") && user) {
-    const { data: profile } = await supabase
-      .from("profiles")
-      .select("role")
-      .eq("id", user.id)
-      .single();
+  try {
+    const supabase = createServerClient(
+      supabaseUrl,
+      supabaseKey,
+      {
+        cookies: {
+          getAll() {
+            return request.cookies.getAll();
+          },
+          setAll(cookiesToSet) {
+            cookiesToSet.forEach(({ name, value }) =>
+              request.cookies.set(name, value)
+            );
+            response = NextResponse.next({ request });
+            cookiesToSet.forEach(({ name, value, options }) =>
+              response.cookies.set(name, value, options)
+            );
+          },
+        },
+      }
+    );
 
-    if (!profile || profile.role !== "admin") {
-      return NextResponse.redirect(new URL("/", request.url));
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+
+    const isProtected = PROTECTED_PREFIXES.some((p) =>
+      request.nextUrl.pathname.startsWith(p)
+    );
+
+    if (isProtected && !user) {
+      const redirectUrl = new URL("/", request.url);
+      redirectUrl.searchParams.set("login", "required");
+      return NextResponse.redirect(redirectUrl);
     }
+
+    if (request.nextUrl.pathname.startsWith("/admin") && user) {
+      const { data: profile } = await supabase
+        .from("profiles")
+        .select("role")
+        .eq("id", user.id)
+        .single();
+
+      if (!profile || profile.role !== "admin") {
+        return NextResponse.redirect(new URL("/", request.url));
+      }
+    }
+  } catch (err) {
+    console.warn("[5tarResult] Middleware auth check warning:", err);
   }
 
   return response;
